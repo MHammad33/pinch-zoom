@@ -8,10 +8,8 @@ namespace PinchZoom.Native;
 /// </summary>
 public static class KeyState
 {
-    private const int VK_CAPITAL = 0x14;
-
-    /// <summary>True while Caps Lock is physically held (the high bit of GetAsyncKeyState, not the toggle bit).</summary>
-    public static bool IsCapsLockDown() => (NativeMethods.GetAsyncKeyState(VK_CAPITAL) & 0x8000) != 0;
+    /// <summary>True while the key is physically held (the high bit of GetAsyncKeyState, not the toggle bit).</summary>
+    public static bool IsKeyDown(int virtualKey) => (NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 
     private static class NativeMethods
     {
