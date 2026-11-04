@@ -33,6 +33,9 @@ public partial class App : Application
         _hotkey.Pressed += (_, _) => _zoom.Press();
         _hotkey.Released += (_, _) => _zoom.Release();
 
+        // A hold released by the stuck-key poll never got its key-up, so let the hook start fresh.
+        _zoom.StuckKeyReleased += () => _hotkey.ResyncUp();
+
         if (!_hotkey.TryInstall(out var hookError))
         {
             _tray.ShowError($"Could not install keyboard hook (error {hookError}).");
