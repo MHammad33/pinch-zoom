@@ -29,9 +29,9 @@ Derived from the approved [design](design.md). Each task is one build pass and e
 **Done when:** zoom in and out are smooth with no jumps; state-machine tests pass.
 **Depends on:** Task 4.
 
-### Task 6: Live cursor tracking
-**Goal:** the view pans with the cursor every frame while zoomed; a `GetAsyncKeyState` poll releases a stuck state if a key-up is missed.
-**Done when:** the zoomed view follows the cursor smoothly; a missed key-up never leaves the screen zoomed.
+### Task 6: Stuck-key release
+**Goal:** release a stuck zoom if a key-up is missed. The view stays fixed while zoomed (no cursor tracking). `GetAsyncKeyState` cannot be used because it reads the swallowed Caps Lock as up; use Raw Input or another signal.
+**Done when:** a missed key-up never leaves the screen zoomed.
 **Depends on:** Task 5. This completes the MVP.
 
 ## Milestone: Polish & extras (Tasks 7–8)

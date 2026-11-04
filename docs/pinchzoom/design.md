@@ -4,7 +4,7 @@
 
 ## Summary
 
-PinchZoom is a Windows tray utility. While the user holds a hotkey, the whole screen smoothly magnifies around the mouse cursor and the view follows the cursor. Releasing the key smoothly returns to normal. No application's own zoom level changes.
+PinchZoom is a Windows tray utility. While the user holds a hotkey, the whole screen smoothly magnifies around the mouse cursor and the view stays fixed where the cursor was when zoom started (the mouse moves freely, without panning the view). Releasing the key smoothly returns to normal. No application's own zoom level changes.
 
 Stack: C# / .NET 8, WPF (tray shell only, no visible window), Windows Magnification API, Win32 low-level keyboard hook.
 
@@ -33,7 +33,7 @@ Low-level keyboard hook (key down / key up)
 ### Components
 
 - **HotkeyService**: installs a `WH_KEYBOARD_LL` hook. Tracks whether the configured combo is fully held. Raises `Pressed` and `Released`. `RegisterHotKey` is rejected because it reports only press, not release.
-- **ZoomController**: state machine `Idle → ZoomingIn → Zoomed → ZoomingOut → Idle`. Owns a render loop that runs only while not Idle. Each frame: advance the current zoom factor toward the target (1.0 or the target zoom), read the cursor, ask AnchorCalculator for the offset, call the engine.
+- **ZoomController**: state machine `Idle → ZoomingIn → Zoomed → ZoomingOut → Idle`. Owns a render loop that runs only while not Idle. Each frame: advance the current zoom factor toward the target (1.0 or the target zoom), use the anchor captured when zoom started, ask AnchorCalculator for the offset, call the engine.
 - **AnchorCalculator**: pure function, no Windows calls, unit-testable.
   For screen size `W×H`, zoom `z`, cursor `(cx, cy)`:
   `xOff = clamp(cx * (1 - 1/z), 0, W - W/z)`, same for y.
@@ -43,7 +43,7 @@ Low-level keyboard hook (key down / key up)
 
 ### Animation
 
-A background thread loop paced by `DwmFlush()` (vsync) rather than `DispatcherTimer`, which is too jittery for smooth zoom. Ease-out curve, about 150 ms in and 120 ms out. Zoom factor is the animated value; the offset is recomputed every frame from the live cursor position, so tracking (Phase 6) falls out of the same loop.
+A background thread loop paced by `DwmFlush()` (vsync) rather than `DispatcherTimer`, which is too jittery for smooth zoom. Ease-out curve, about 150 ms in and 120 ms out. Zoom factor is the animated value; the offset is computed once from the cursor position when zoom starts and stays fixed; moving the mouse never pans the view (decided in Task 6; edge-panning was rejected).
 
 ### Project layout
 
@@ -112,7 +112,7 @@ Core has no Windows dependency so the math and state machine can be tested witho
 3. **Cursor anchoring**: AnchorCalculator plus tests; apply at cursor position at the moment of zoom.
 4. **Hotkey**: keyboard hook, press-and-hold triggers zoom, release resets (still instant).
 5. **Smooth animation**: DwmFlush loop, easing, reversal handling.
-6. **Live tracking**: per-frame cursor update while zoomed.
+6. **Stuck-key release**: release a missed key-up. (Live cursor tracking was dropped: the view stays fixed. GetAsyncKeyState reads the swallowed Caps Lock as up, so the mechanism is to be decided.)
 7. **Polish**: tray controls, clean exit/crash safety, JSON config for hotkey and zoom level.
 8. **Wheel zoom (after MVP)**: while the key is held, the mouse wheel changes zoom between 1x and 5x, like Chrome pinch.
 

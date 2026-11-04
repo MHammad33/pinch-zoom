@@ -41,17 +41,7 @@ public class ZoomControllerTests
 
         public void Shutdown() => Record("shutdown");
 
-        private long _cursor = Pack(960, 540);
-
-        private static long Pack(int x, int y) => ((long)x << 32) | (uint)y;
-
-        public void MoveCursor(int x, int y) => Interlocked.Exchange(ref _cursor, Pack(x, y));
-
-        public (int X, int Y) GetCursorPosition()
-        {
-            var c = Interlocked.Read(ref _cursor);
-            return ((int)(c >> 32), (int)(uint)c);
-        }
+        public (int X, int Y) GetCursorPosition() => (960, 540);
 
         public (int Width, int Height) GetScreenSize() => (1920, 1080);
 
@@ -135,24 +125,6 @@ public class ZoomControllerTests
 
         Assert.Equal(1.0f, host.LastFactor);
         Assert.Equal(new[] { "reset", "shutdown" }, host.Calls.TakeLast(2));
-    }
-
-    [Fact]
-    public void WhileZoomed_ViewFollowsTheCursor()
-    {
-        var host = new FakeHost();
-        using var controller = new ZoomController(host, FastMachine());
-        Assert.True(controller.TryStart(out _));
-
-        controller.Press();
-        WaitUntil(() => controller.State == ZoomState.Zoomed);
-        WaitUntil(() => host.Calls.Contains("set 2 480 270"));
-
-        host.MoveCursor(0, 0);
-        WaitUntil(() => host.Calls.Contains("set 2 0 0"));
-
-        host.MoveCursor(1920, 1080);
-        WaitUntil(() => host.Calls.Contains("set 2 960 540"));
     }
 
     [Fact]

@@ -22,6 +22,8 @@ public sealed class ZoomController : IDisposable
     private bool _initialized;
     private int _initError;
 
+    // Captured when a zoom starts from 1.0, so the area under the cursor stays put. Live tracking is Task 6.
+    private (int X, int Y) _anchor;
     private (int Width, int Height) _screen;
 
     public ZoomController(IZoomHost host, ZoomStateMachine machine)
@@ -83,7 +85,7 @@ public sealed class ZoomController : IDisposable
 
         try
         {
-            var applied = (Zoom: 1.0, X: 0, Y: 0);
+            var applied = 1.0;
             while (!_stopping)
             {
                 double zoom;
@@ -94,22 +96,10 @@ public sealed class ZoomController : IDisposable
                     active = _machine.IsActive;
                 }
 
-                if (zoom <= 1.0)
+                if (zoom != applied)
                 {
-                    if (applied.Zoom > 1.0) _host.Reset();
-                    applied = (1.0, 0, 0);
-                }
-                else
-                {
-                    // The cursor is re-read every frame, so the view follows it while zoomed.
-                    if (applied.Zoom <= 1.0) _screen = _host.GetScreenSize();
-                    var (cx, cy) = _host.GetCursorPosition();
-                    var (x, y) = AnchorCalculator.Calculate(cx, cy, _screen.Width, _screen.Height, zoom);
-                    if (zoom != applied.Zoom || x != applied.X || y != applied.Y)
-                    {
-                        _host.SetTransform((float)zoom, x, y);
-                        applied = (zoom, x, y);
-                    }
+                    Apply(zoom, startingFromIdle: applied <= 1.0);
+                    applied = zoom;
                 }
 
                 if (active) _host.WaitForNextFrame();
@@ -126,6 +116,24 @@ public sealed class ZoomController : IDisposable
 
         _host.Reset();
         _host.Shutdown();
+    }
+
+    private void Apply(double zoom, bool startingFromIdle)
+    {
+        if (zoom <= 1.0)
+        {
+            _host.Reset();
+            return;
+        }
+
+        if (startingFromIdle)
+        {
+            _anchor = _host.GetCursorPosition();
+            _screen = _host.GetScreenSize();
+        }
+
+        var (x, y) = AnchorCalculator.Calculate(_anchor.X, _anchor.Y, _screen.Width, _screen.Height, zoom);
+        _host.SetTransform((float)zoom, x, y);
     }
 
     /// <summary>
