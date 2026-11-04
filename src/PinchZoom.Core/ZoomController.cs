@@ -22,9 +22,19 @@ public sealed class ZoomController : IDisposable
     private bool _initialized;
     private int _initError;
 
-    // Captured when a zoom starts from 1.0, so the area under the cursor stays put. Live tracking is Task 6.
+    // Captured when a zoom starts from 1.0, so the area under the cursor stays put. The view stays fixed while zoomed.
     private (int X, int Y) _anchor;
     private (int Width, int Height) _screen;
+    private TimeSpan? _upSince;
+
+    /// <summary>How long the key must read as up before a missed key-up is assumed.</summary>
+    public static readonly TimeSpan StuckKeyGrace = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Raised on the render thread when the controller released a hold because the key read as up
+    /// (its key-up never arrived). Handlers must return quickly and not call back into the controller.
+    /// </summary>
+    public event Action? StuckKeyReleased;
 
     public ZoomController(IZoomHost host, ZoomStateMachine machine)
     {
@@ -61,7 +71,12 @@ public sealed class ZoomController : IDisposable
 
     public void Press()
     {
-        lock (_gate) _machine.Press(_clock.Elapsed);
+        lock (_gate)
+        {
+            _upSince = null;
+            _machine.Press(_clock.Elapsed);
+        }
+
         _wake.Set();
     }
 
@@ -90,11 +105,15 @@ public sealed class ZoomController : IDisposable
             {
                 double zoom;
                 bool active;
+                bool stuck;
                 lock (_gate)
                 {
+                    stuck = PollStuckKey();
                     zoom = _machine.Advance(_clock.Elapsed);
                     active = _machine.IsActive;
                 }
+
+                if (stuck) StuckKeyReleased?.Invoke();
 
                 if (zoom != applied)
                 {
@@ -116,6 +135,28 @@ public sealed class ZoomController : IDisposable
 
         _host.Reset();
         _host.Shutdown();
+    }
+
+    /// <summary>
+    /// Releases the machine if the key is no longer down (a key-up the hook missed). The key must read as up for
+    /// <see cref="StuckKeyGrace"/> first, so the short gap between the hook's key-down and the host's key state
+    /// catching up is never mistaken for a release. Returns true when it released. Call with <c>_gate</c> held.
+    /// </summary>
+    private bool PollStuckKey()
+    {
+        if (!_machine.IsActive || _host.IsZoomKeyDown())
+        {
+            _upSince = null;
+            return false;
+        }
+
+        var now = _clock.Elapsed;
+        _upSince ??= now;
+        if (now - _upSince < StuckKeyGrace) return false;
+
+        _upSince = null;
+        _machine.Release(now);
+        return true;
     }
 
     private void Apply(double zoom, bool startingFromIdle)

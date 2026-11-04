@@ -20,5 +20,7 @@ internal sealed class NativeZoomHost : IZoomHost
 
     public (int Width, int Height) GetScreenSize() => MagnificationEngine.PrimaryScreenSize;
 
+    public bool IsZoomKeyDown() => KeyState.IsCapsLockDown();
+
     public void WaitForNextFrame() => FramePacer.WaitForNextFrame();
 }

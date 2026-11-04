@@ -41,6 +41,10 @@ public class ZoomControllerTests
 
         public void Shutdown() => Record("shutdown");
 
+        public volatile bool KeyDown = true;
+
+        public bool IsZoomKeyDown() => KeyDown;
+
         public (int X, int Y) GetCursorPosition() => (960, 540);
 
         public (int Width, int Height) GetScreenSize() => (1920, 1080);
@@ -125,6 +129,56 @@ public class ZoomControllerTests
 
         Assert.Equal(1.0f, host.LastFactor);
         Assert.Equal(new[] { "reset", "shutdown" }, host.Calls.TakeLast(2));
+    }
+
+    [Fact]
+    public void MissedKeyUp_ReleasesZoomAfterGrace_AndRaisesEvent()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        var raised = 0;
+        controller.StuckKeyReleased += () => Interlocked.Increment(ref raised);
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed);
+
+        host.KeyDown = false; // the key-up never reaches Release()
+        WaitUntil(() => controller.State == ZoomState.Idle);
+        WaitUntil(() => host.LastFactor == 1.0f);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void BriefKeyUpReading_DoesNotRelease()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed);
+
+        host.KeyDown = false;
+        Thread.Sleep(20); // well under the grace period
+        host.KeyDown = true;
+        Thread.Sleep(ZoomController.StuckKeyGrace + TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(ZoomState.Zoomed, controller.State);
+    }
+
+    [Fact]
+    public void KeyReadingUpWhilePressIsPending_CancelsTheHold()
+    {
+        var host = new FakeHost { KeyDown = false };
+        using var controller = new ZoomController(host, new ZoomStateMachine(2.0, TimeSpan.FromSeconds(10)));
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        Thread.Sleep(ZoomController.StuckKeyGrace + TimeSpan.FromMilliseconds(150));
+
+        Assert.Equal(ZoomState.Idle, controller.State);
+        Assert.DoesNotContain(host.Calls, c => c.StartsWith("set"));
     }
 
     [Fact]

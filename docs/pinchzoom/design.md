@@ -4,7 +4,7 @@
 
 ## Summary
 
-PinchZoom is a Windows tray utility. While the user holds a hotkey, the whole screen smoothly magnifies around the mouse cursor and the view follows the cursor. Releasing the key smoothly returns to normal. No application's own zoom level changes.
+PinchZoom is a Windows tray utility. While the user holds a hotkey, the whole screen smoothly magnifies around the mouse cursor and the view stays fixed where the cursor was when zoom started (the mouse moves freely, without panning the view). Releasing the key smoothly returns to normal. No application's own zoom level changes.
 
 Stack: C# / .NET 8, WPF (tray shell only, no visible window), Windows Magnification API, Win32 low-level keyboard hook.
 
@@ -33,7 +33,7 @@ Low-level keyboard hook (key down / key up)
 ### Components
 
 - **HotkeyService**: installs a `WH_KEYBOARD_LL` hook. Tracks whether the configured combo is fully held. Raises `Pressed` and `Released`. `RegisterHotKey` is rejected because it reports only press, not release.
-- **ZoomController**: state machine `Idle → ZoomingIn → Zoomed → ZoomingOut → Idle`. Owns a render loop that runs only while not Idle. Each frame: advance the current zoom factor toward the target (1.0 or the target zoom), read the cursor, ask AnchorCalculator for the offset, call the engine.
+- **ZoomController**: state machine `Idle → ZoomingIn → Zoomed → ZoomingOut → Idle`. Owns a render loop that runs only while not Idle. Each frame: advance the current zoom factor toward the target (1.0 or the target zoom), use the anchor captured when zoom started, ask AnchorCalculator for the offset, call the engine.
 - **AnchorCalculator**: pure function, no Windows calls, unit-testable.
   For screen size `W×H`, zoom `z`, cursor `(cx, cy)`:
   `xOff = clamp(cx * (1 - 1/z), 0, W - W/z)`, same for y.
@@ -43,7 +43,7 @@ Low-level keyboard hook (key down / key up)
 
 ### Animation
 
-A background thread loop paced by `DwmFlush()` (vsync) rather than `DispatcherTimer`, which is too jittery for smooth zoom. Ease-out curve, about 150 ms in and 120 ms out. Zoom factor is the animated value; the offset is recomputed every frame from the live cursor position, so tracking (Phase 6) falls out of the same loop.
+A background thread loop paced by `DwmFlush()` (vsync) rather than `DispatcherTimer`, which is too jittery for smooth zoom. Ease-out curve, about 150 ms in and 120 ms out. Zoom factor is the animated value; the offset is computed once from the cursor position when zoom starts and stays fixed; moving the mouse never pans the view (decided in Task 6; edge-panning was rejected).
 
 ### Project layout
 
@@ -65,7 +65,7 @@ Core has no Windows dependency so the math and state machine can be tested witho
 | Language/stack | C# / .NET 8 / WPF | Electron/JS | Native access to Magnification API; Electron would need a capture overlay and a native hook module. |
 | Magnification | `MagSetFullscreenTransform` | Capture + overlay window; `MagSetWindowTransform` host window | Live content, no capture lag, no self-capture problem. Simplest API. |
 | Hotkey | Low-level keyboard hook | `RegisterHotKey` | Need key-up. |
-| Hotkey | Caps Lock, held (user's choice; configurable later). The hook swallows Caps Lock so it never toggles caps state or shows the indicator. | Multi-key combos, Win key, Right Ctrl | User wants one key. Caps Lock is rarely needed; swallowing it is done in the keyboard hook. |
+| Hotkey | Caps Lock, held (user's choice; configurable later). The hook lets Caps Lock through (so its key state stays readable) and undoes the caps toggle after release; the indicator may flicker while held. | Multi-key combos, Win key, Right Ctrl | User wants one key. Caps Lock is rarely needed; the toggle is undone by a synthetic Caps press after release. |
 | Zoom amount | Chrome-like range: 1x to 5x max. MVP zooms to a default of 2.5x on hold; mouse wheel while held adjusts level (Phase 8) | Fixed single level only | Chrome pinch is continuous and caps near 5x. Wheel gives similar control without a touchpad. |
 | Animation timing | `DwmFlush` loop on a background thread | `DispatcherTimer`, WPF animations | Better frame pacing; WPF animation does not drive the Magnification API anyway. |
 | Settings storage | JSON file in `%AppData%\PinchZoom` | Registry, settings UI | Simplest; V1 has no settings UI. |
@@ -80,7 +80,7 @@ Core has no Windows dependency so the math and state machine can be tested witho
 - R5: App runs with no taskbar window; tray icon with Exit.
 - R6: Exiting the app (or crashing) never leaves the screen magnified.
 - R7: Pressing again during zoom-out reverses from the current factor with no jump.
-- R8: Caps Lock is consumed by PinchZoom and no longer toggles caps. Zoom triggers when it is held past a short threshold (about 150 ms); a quicker tap does nothing.
+- R8: Caps Lock does not change caps state: PinchZoom lets the key through (its state must stay readable) and flips the toggle back with a synthetic press after release. Zoom triggers when it is held past a short threshold (about 150 ms); a quicker tap does nothing.
 
 ## Invariants
 
@@ -94,7 +94,7 @@ Core has no Windows dependency so the math and state machine can be tested witho
 - `MagInitialize` fails: show a tray balloon "Could not start magnifier", app stays idle, no crash.
 - Hook install fails: same, with the error code logged.
 - Unhandled exception: global handler resets magnification before the process dies. The OS also resets the transform when the initializing process ends.
-- Stuck state (key-up missed, e.g. focus change or UAC prompt): ZoomController also polls `GetAsyncKeyState` for the combo each frame and releases if it is no longer down.
+- Stuck state (key-up missed, e.g. focus change or UAC prompt): ZoomController also polls `GetAsyncKeyState` for the key each frame and releases if it has read as up for 100 ms. This works only because the hook passes Caps Lock through: a swallowed key reads as up in both `GetAsyncKeyState` and Raw Input (verified).
 
 ## Test strategy
 
@@ -112,7 +112,7 @@ Core has no Windows dependency so the math and state machine can be tested witho
 3. **Cursor anchoring**: AnchorCalculator plus tests; apply at cursor position at the moment of zoom.
 4. **Hotkey**: keyboard hook, press-and-hold triggers zoom, release resets (still instant).
 5. **Smooth animation**: DwmFlush loop, easing, reversal handling.
-6. **Live tracking**: per-frame cursor update while zoomed.
+6. **Stuck-key release**: release a missed key-up via a `GetAsyncKeyState` poll. (Live cursor tracking was dropped: the view stays fixed. Caps Lock now passes through the hook and the caps toggle is undone.)
 7. **Polish**: tray controls, clean exit/crash safety, JSON config for hotkey and zoom level.
 8. **Wheel zoom (after MVP)**: while the key is held, the mouse wheel changes zoom between 1x and 5x, like Chrome pinch.
 
@@ -128,7 +128,7 @@ Each phase ends in something runnable and a small commit.
 
 ## Open questions
 
-1. **Caps Lock side effects**: decided. Swallow it fully, so caps typing is lost unless the user turns it back on via a tray option or setting. Revisit in Phase 7. Non-blocking.
+1. **Caps Lock side effects**: decided. The key passes through the hook and PinchZoom flips the caps toggle back after release, so caps state is unchanged (the indicator may flicker). Swallowing was dropped because it hides the key from every key-state API.
 2. **Default zoom level** (2.5x) and 5x cap: tune by feel in Phase 5.
 3. **Elevated windows**: the fullscreen transform generally magnifies everything, but behaviour over elevated/secure windows (UAC, admin apps) should be checked in Phase 2. Non-blocking; if it proves limited, document it.
    - Phase 2 result: an elevated (administrator) terminal is magnified like any other window. UAC secure-desktop prompts are untested. A fixed centre zoom hides the taskbar, so the test zoom auto-reverts after 5 s. Revisit when cursor anchoring lands.

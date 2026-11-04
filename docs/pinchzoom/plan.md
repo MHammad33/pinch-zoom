@@ -20,8 +20,8 @@ Derived from the approved [design](design.md). Each task is one build pass and e
 **Depends on:** Task 2.
 
 ### Task 4: Caps Lock hold-to-zoom
-**Goal:** low-level keyboard hook that swallows Caps Lock; holding about 0.15 s zooms, releasing resets (still instant).
-**Done when:** hold zooms, release resets, Caps Lock no longer toggles caps.
+**Goal:** low-level keyboard hook on Caps Lock (originally swallowed; Task 6 changed it to pass through and undo the toggle); holding about 0.15 s zooms, releasing resets (still instant).
+**Done when:** hold zooms, release resets, Caps Lock does not change caps state.
 **Depends on:** Task 3. First usable version.
 
 ### Task 5: Smooth animation
@@ -29,9 +29,9 @@ Derived from the approved [design](design.md). Each task is one build pass and e
 **Done when:** zoom in and out are smooth with no jumps; state-machine tests pass.
 **Depends on:** Task 4.
 
-### Task 6: Live cursor tracking
-**Goal:** the view pans with the cursor every frame while zoomed; a `GetAsyncKeyState` poll releases a stuck state if a key-up is missed.
-**Done when:** the zoomed view follows the cursor smoothly; a missed key-up never leaves the screen zoomed.
+### Task 6: Stuck-key release
+**Goal:** release a stuck zoom if a key-up is missed. The view stays fixed while zoomed (no cursor tracking). Poll `GetAsyncKeyState`, which requires the hook to pass Caps Lock through (swallowed keys read as up, also in Raw Input), and undo the caps toggle after release.
+**Done when:** a missed key-up never leaves the screen zoomed.
 **Depends on:** Task 5. This completes the MVP.
 
 ## Milestone: Polish & extras (Tasks 7–8)
