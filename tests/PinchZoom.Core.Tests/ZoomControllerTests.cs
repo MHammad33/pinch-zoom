@@ -201,6 +201,23 @@ public class ZoomControllerTests
     }
 
     [Fact]
+    public void Wheel_WhileHeld_ChangesZoom_AndReleaseResets()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed && host.LastFactor == 2.0f);
+
+        controller.Wheel(120);
+        WaitUntil(() => host.LastFactor == 2.5f);
+
+        controller.Release();
+        WaitUntil(() => controller.State == ZoomState.Idle && host.LastFactor == 1.0f);
+    }
+
+    [Fact]
     public void FrameThatThrows_ResetsScreenAndRaisesFaulted()
     {
         var host = new FakeHost { ThrowOnSet = true };

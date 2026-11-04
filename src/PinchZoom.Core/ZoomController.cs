@@ -7,7 +7,7 @@ namespace PinchZoom.Core;
 /// <see cref="IZoomHost.WaitForNextFrame"/>, and is the only caller of the magnifier.
 /// The render thread owns the magnifier for its whole life (initialize, transforms, reset, shutdown).
 /// While idle it sleeps on an event; it only runs frames while a hold is pending or zoom is not 1.0.
-/// <see cref="Press"/> and <see cref="Release"/> are cheap and safe to call from the keyboard hook.
+/// <see cref="Press"/>, <see cref="Release"/> and <see cref="Wheel"/> are cheap and safe to call from the input hooks.
 /// </summary>
 public sealed class ZoomController : IDisposable
 {
@@ -89,6 +89,13 @@ public sealed class ZoomController : IDisposable
     public void Release()
     {
         lock (_gate) _machine.Release(_clock.Elapsed);
+        _wake.Set();
+    }
+
+    /// <summary>One wheel delta (120 per notch, positive = away from the user = zoom in). Ignored unless the key is held.</summary>
+    public void Wheel(int delta)
+    {
+        lock (_gate) _machine.Wheel(delta / 120.0, _clock.Elapsed);
         _wake.Set();
     }
 

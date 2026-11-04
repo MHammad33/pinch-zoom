@@ -219,6 +219,145 @@ public class ZoomStateMachineTests
         }
     }
 
+    [Fact]
+    public void Wheel_WhenNotHeld_IsIgnored()
+    {
+        var m = NewMachine();
+        m.Wheel(3, Ms(0));
+        Assert.Equal(ZoomState.Idle, m.State);
+        Assert.Equal(1.0, m.Advance(Ms(500)));
+
+        var z = FullyZoomed();
+        z.Release(Ms(1000));
+        z.Wheel(3, Ms(1010));
+        Assert.Equal(ZoomState.ZoomingOut, z.State);
+    }
+
+    [Fact]
+    public void Wheel_WhenZoomed_AnimatesByStepFactor()
+    {
+        var m = FullyZoomed();
+        m.Wheel(1, Ms(400));
+        Assert.Equal(ZoomState.ZoomingIn, m.State);
+
+        var mid = m.Advance(Ms(450));
+        Assert.True(mid > 2.5 && mid < 2.5 * ZoomStateMachine.WheelStepFactor);
+
+        Assert.Equal(2.5 * ZoomStateMachine.WheelStepFactor, m.Advance(Ms(500)), 9);
+        Assert.Equal(ZoomState.Zoomed, m.State);
+    }
+
+    [Fact]
+    public void Wheel_DuringHoldThreshold_StartsZoomingAtOnce()
+    {
+        var m = NewMachine();
+        m.Press(Ms(0));
+        m.Wheel(1, Ms(20));
+
+        Assert.False(m.IsHoldPending);
+        Assert.Equal(ZoomState.ZoomingIn, m.State);
+        Assert.Equal(ZoomStateMachine.WheelStepFactor, m.Advance(Ms(200)), 9);
+    }
+
+    [Fact]
+    public void Wheel_DuringZoomIn_StacksOnTheLevelBeingHeadedFor()
+    {
+        var m = StartedZoomIn();
+        var before = m.Advance(Ms(170));
+
+        m.Wheel(1, Ms(170));
+        Assert.Equal(before, m.Advance(Ms(170))); // no jump
+        Assert.Equal(2.5 * ZoomStateMachine.WheelStepFactor, m.Advance(Ms(400)), 9);
+    }
+
+    [Fact]
+    public void Wheel_ClampsToMaxZoom()
+    {
+        var m = FullyZoomed();
+        m.Wheel(50, Ms(400));
+        Assert.Equal(ZoomStateMachine.MaxZoom, m.Advance(Ms(600)));
+
+        m.Wheel(1, Ms(600)); // already at max: nothing to do
+        Assert.Equal(ZoomState.Zoomed, m.State);
+    }
+
+    [Fact]
+    public void Wheel_DownToOne_WhileHeld_StaysZoomedAndCanGoBackUp()
+    {
+        var m = FullyZoomed();
+        m.Wheel(-50, Ms(400));
+        Assert.Equal(1.0, m.Advance(Ms(600)));
+        Assert.Equal(ZoomState.Zoomed, m.State);
+        Assert.True(m.IsActive);
+
+        m.Wheel(1, Ms(700));
+        Assert.Equal(ZoomStateMachine.WheelStepFactor, m.Advance(Ms(900)), 9);
+    }
+
+    [Fact]
+    public void Release_AfterWheelDownToOne_GoesIdle()
+    {
+        var m = FullyZoomed();
+        m.Wheel(-50, Ms(400));
+        m.Advance(Ms(600));
+
+        m.Release(Ms(700));
+        Assert.Equal(1.0, m.Advance(Ms(700)));
+        Assert.Equal(ZoomState.Idle, m.State);
+        Assert.False(m.IsActive);
+    }
+
+    [Fact]
+    public void Release_FromMaxZoom_TakesNoLongerThanFullZoomOut()
+    {
+        var m = FullyZoomed();
+        m.Wheel(50, Ms(400));
+        m.Advance(Ms(600));
+
+        m.Release(Ms(1000));
+        Assert.Equal(1.0, m.Advance(Ms(1000 + 120)));
+        Assert.Equal(ZoomState.Idle, m.State);
+    }
+
+    [Fact]
+    public void NextHold_AfterWheel_StartsAtTargetZoomAgain()
+    {
+        var m = FullyZoomed();
+        m.Wheel(3, Ms(400));
+        m.Advance(Ms(600));
+        m.Release(Ms(700));
+        m.Advance(Ms(1000));
+
+        m.Press(Ms(2000));
+        m.Advance(Ms(2150));
+        Assert.Equal(2.5, m.Advance(Ms(2300)));
+    }
+
+    [Fact]
+    public void ZoomStaysWithinRange_UnderRandomWheelInput()
+    {
+        var random = new Random(4321);
+        var m = NewMachine();
+        var down = false;
+
+        for (var t = 0; t < 20_000; t += random.Next(1, 20))
+        {
+            var roll = random.NextDouble();
+            if (roll < 0.03)
+            {
+                if (down) m.Release(Ms(t)); else m.Press(Ms(t));
+                down = !down;
+            }
+            else if (roll < 0.2)
+            {
+                m.Wheel(random.Next(-3, 4) * random.NextDouble(), Ms(t));
+            }
+
+            var z = m.Advance(Ms(t));
+            Assert.InRange(z, 1.0, ZoomStateMachine.MaxZoom);
+        }
+    }
+
     [Theory]
     [InlineData(1.0)]
     [InlineData(0.5)]
