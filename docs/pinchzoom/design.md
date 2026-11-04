@@ -131,4 +131,5 @@ Each phase ends in something runnable and a small commit.
 1. **Caps Lock side effects**: decided. Swallow it fully, so caps typing is lost unless the user turns it back on via a tray option or setting. Revisit in Phase 7. Non-blocking.
 2. **Default zoom level** (2.5x) and 5x cap: tune by feel in Phase 5.
 3. **Elevated windows**: the fullscreen transform generally magnifies everything, but behaviour over elevated/secure windows (UAC, admin apps) should be checked in Phase 2. Non-blocking; if it proves limited, document it.
+   - Phase 2 status: not yet tested over elevated/UAC windows. Also, a fixed centre zoom hides the taskbar, so the test zoom auto-reverts after 5 s. Revisit when cursor anchoring lands.
 4. **DPI awareness**: the app needs a per-monitor-v2 manifest so cursor coordinates and the screen size match physical pixels. We will set this in Phase 1. Non-blocking.
