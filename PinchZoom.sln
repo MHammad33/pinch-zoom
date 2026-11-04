@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{390C123D-88F0-4D26-96E2-BD691B467917}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PinchZoom", "src\PinchZoom\PinchZoom.csproj", "{65B4E952-36A6-4630-AB0C-8B020A331E6B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PinchZoom.Core", "src\PinchZoom.Core\PinchZoom.Core.csproj", "{613E0904-866A-4093-8C1D-E7487D75C46D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PinchZoom.Native", "src\PinchZoom.Native\PinchZoom.Native.csproj", "{5902F5AE-DE11-4635-9FE9-5852D65E2828}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{96A04DDC-3866-4DB8-AA9F-096F63D4F4DE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PinchZoom.Core.Tests", "tests\PinchZoom.Core.Tests\PinchZoom.Core.Tests.csproj", "{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{65B4E952-36A6-4630-AB0C-8B020A331E6B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65B4E952-36A6-4630-AB0C-8B020A331E6B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65B4E952-36A6-4630-AB0C-8B020A331E6B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65B4E952-36A6-4630-AB0C-8B020A331E6B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{613E0904-866A-4093-8C1D-E7487D75C46D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{613E0904-866A-4093-8C1D-E7487D75C46D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{613E0904-866A-4093-8C1D-E7487D75C46D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{613E0904-866A-4093-8C1D-E7487D75C46D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5902F5AE-DE11-4635-9FE9-5852D65E2828}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5902F5AE-DE11-4635-9FE9-5852D65E2828}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5902F5AE-DE11-4635-9FE9-5852D65E2828}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5902F5AE-DE11-4635-9FE9-5852D65E2828}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{65B4E952-36A6-4630-AB0C-8B020A331E6B} = {390C123D-88F0-4D26-96E2-BD691B467917}
+		{613E0904-866A-4093-8C1D-E7487D75C46D} = {390C123D-88F0-4D26-96E2-BD691B467917}
+		{5902F5AE-DE11-4635-9FE9-5852D65E2828} = {390C123D-88F0-4D26-96E2-BD691B467917}
+		{B40CDC1B-E6C6-4AD5-B4F9-72479FA7E7CF} = {96A04DDC-3866-4DB8-AA9F-096F63D4F4DE}
+	EndGlobalSection
+EndGlobal
