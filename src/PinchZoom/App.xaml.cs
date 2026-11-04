@@ -1,5 +1,4 @@
-using System.ComponentModel;
-using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using PinchZoom.Core;
 using PinchZoom.Native;
@@ -11,6 +10,8 @@ public partial class App : Application
     private TrayHost? _tray;
     private ZoomController? _zoom;
     private HotkeyService? _hotkey;
+    private SettingsWindow? _settings;
+    private PinchZoomConfig _config = PinchZoomConfig.Default;
     private int _zoomKey = HotkeyService.VK_CAPITAL;
     private bool _paused;
 
@@ -25,8 +26,7 @@ public partial class App : Application
         _tray = new TrayHost();
         _tray.ExitRequested += (_, _) => Shutdown();
         _tray.PauseChanged += (_, paused) => SetPaused(paused);
-        _tray.OpenConfigRequested += (_, _) => OpenConfig();
-        _tray.ReloadConfigRequested += (_, _) => ReloadConfig();
+        _tray.SettingsRequested += (_, _) => OpenSettings();
 
         StartZoom();
     }
@@ -37,23 +37,21 @@ public partial class App : Application
         _zoom?.Dispose();
     }
 
-    /// <summary>
-    /// Loads the config, then starts the controller and (unless paused) the hook.
-    /// Returns true when everything started with no problem to report.
-    /// </summary>
-    private bool StartZoom()
+    /// <summary>Loads the config, then starts the controller and (unless paused) the hook.</summary>
+    private void StartZoom()
     {
         var loaded = ConfigStore.Load();
         if (loaded.Problems.Count > 0)
             _tray!.ShowError(string.Join(Environment.NewLine, loaded.Problems));
 
+        _config = loaded.Config;
         _zoomKey = loaded.VirtualKey;
 
-        var zoom = new ZoomController(new NativeZoomHost(_zoomKey), new ZoomStateMachine(loaded.Config.Zoom));
+        var zoom = new ZoomController(new NativeZoomHost(_zoomKey), new ZoomStateMachine(_config.Zoom));
         zoom.Faulted += ex => Dispatcher.BeginInvoke(() =>
         {
             ErrorLog.Write("Render thread failed", ex);
-            _tray?.ShowError("Zoom stopped after an error and the screen was reset. Use Reload config to restart it.");
+            _tray?.ShowError("Zoom stopped after an error and the screen was reset. Save settings or restart PinchZoom to turn it back on.");
         });
 
         // A hold released by the stuck-key poll never got its key-up, so let the hook start fresh.
@@ -64,12 +62,11 @@ public partial class App : Application
             zoom.Dispose();
             ErrorLog.Write("MagInitialize failed", $"error {magError}");
             _tray!.ShowError($"Could not start magnifier (error {magError}).");
-            return false;
+            return;
         }
 
         _zoom = zoom;
-        var hooked = _paused || InstallHook();
-        return hooked && loaded.Problems.Count == 0;
+        if (!_paused) InstallHook();
     }
 
     private void StopZoom()
@@ -79,10 +76,9 @@ public partial class App : Application
         _zoom = null;
     }
 
-    private bool InstallHook()
+    private void InstallHook()
     {
-        if (_zoom is null) return false;
-        if (_hotkey is not null) return true;
+        if (_zoom is null || _hotkey is not null) return;
 
         // Handlers run inside the keyboard hook, so they only record the event and return.
         var zoom = _zoom;
@@ -94,11 +90,10 @@ public partial class App : Application
         {
             ErrorLog.Write("Keyboard hook install failed", $"error {hookError}");
             _tray!.ShowError($"Could not install keyboard hook (error {hookError}).");
-            return false;
+            return;
         }
 
         _hotkey = hotkey;
-        return true;
     }
 
     private void RemoveHook()
@@ -121,43 +116,37 @@ public partial class App : Application
         }
     }
 
-    private void ReloadConfig()
+    private void OpenSettings()
     {
+        if (_settings is not null)
+        {
+            if (_settings.WindowState == WindowState.Minimized) _settings.WindowState = WindowState.Normal;
+            _settings.Activate();
+            return;
+        }
+
+        _settings = new SettingsWindow(_config, _zoomKey, ApplySettings);
+        _settings.Closed += (_, _) => _settings = null;
+        _settings.Show();
+        _settings.Activate();
+    }
+
+    /// <summary>Writes the config and restarts zoom with it. Returns an error message, or null on success.</summary>
+    private string? ApplySettings(PinchZoomConfig config)
+    {
+        try
+        {
+            ConfigStore.Save(config);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorLog.Write("Saving settings failed", ex);
+            return $"Could not save settings: {ex.Message}";
+        }
+
         StopZoom();
-
-        // Only confirm a clean reload; a problem already showed its own error balloon.
-        if (StartZoom())
-            _tray!.ShowInfo("Config reloaded.");
-    }
-
-    private void OpenConfig()
-    {
-        try
-        {
-            ConfigStore.EnsureExists();
-            Process.Start(new ProcessStartInfo(ConfigStore.ConfigPath) { UseShellExecute = true });
-        }
-        catch (Win32Exception)
-        {
-            // No app is registered for .json files.
-            TryOpenInNotepad();
-        }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
-        {
-            _tray!.ShowError($"Could not create {ConfigStore.ConfigPath}: {ex.Message}");
-        }
-    }
-
-    private void TryOpenInNotepad()
-    {
-        try
-        {
-            Process.Start("notepad.exe", $"\"{ConfigStore.ConfigPath}\"");
-        }
-        catch (Win32Exception ex)
-        {
-            _tray!.ShowError($"Could not open {ConfigStore.ConfigPath}: {ex.Message}");
-        }
+        StartZoom();
+        return null;
     }
 
     protected override void OnExit(ExitEventArgs e)

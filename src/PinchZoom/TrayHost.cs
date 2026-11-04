@@ -12,8 +12,7 @@ internal sealed class TrayHost : IDisposable
     private readonly ToolStripMenuItem _pause;
 
     public event EventHandler? ExitRequested;
-    public event EventHandler? OpenConfigRequested;
-    public event EventHandler? ReloadConfigRequested;
+    public event EventHandler? SettingsRequested;
 
     /// <summary>Raised with the new state when the user ticks or unticks Pause zoom.</summary>
     public event EventHandler<bool>? PauseChanged;
@@ -25,9 +24,7 @@ internal sealed class TrayHost : IDisposable
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_pause);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Open config", null, (_, _) => OpenConfigRequested?.Invoke(this, EventArgs.Empty));
-        menu.Items.Add("Reload config", null, (_, _) => ReloadConfigRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("Settings…", null, (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
 
@@ -38,6 +35,7 @@ internal sealed class TrayHost : IDisposable
             ContextMenuStrip = menu,
             Visible = true,
         };
+        _icon.DoubleClick += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
 
     public void ShowError(string message) =>
