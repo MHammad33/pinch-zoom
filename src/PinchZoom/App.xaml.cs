@@ -1,4 +1,5 @@
 using System.Windows;
+using PinchZoom.Core;
 using PinchZoom.Native;
 
 namespace PinchZoom;
@@ -11,7 +12,8 @@ public partial class App : Application
 
     private TrayHost? _tray;
     private MagnificationEngine? _engine;
-    // The fixed centre zoom hides the taskbar, so the test must undo itself.
+    // Without live tracking the view cannot pan, so parts of the screen (often the taskbar)
+    // stay out of reach. The test undoes itself as a safety net.
     private readonly System.Windows.Threading.DispatcherTimer _autoRevert = new() { Interval = TimeSpan.FromSeconds(5) };
 
     protected override void OnStartup(StartupEventArgs e)
@@ -46,10 +48,10 @@ public partial class App : Application
             return;
         }
 
-        // Fixed centre anchor; cursor anchoring arrives in Task 3.
+        // Anchor once at the cursor so the area under it stays put. Live tracking arrives in Task 6.
         var (w, h) = MagnificationEngine.PrimaryScreenSize;
-        var xOff = (int)(w * (1 - 1 / TestZoomFactor) / 2);
-        var yOff = (int)(h * (1 - 1 / TestZoomFactor) / 2);
+        var (cx, cy) = CursorReader.GetPosition();
+        var (xOff, yOff) = AnchorCalculator.Calculate(cx, cy, w, h, TestZoomFactor);
         _engine.SetTransform(TestZoomFactor, xOff, yOff);
         _autoRevert.Start();
     }
