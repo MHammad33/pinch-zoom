@@ -22,9 +22,11 @@ public sealed class ZoomController : IDisposable
     private bool _initialized;
     private int _initError;
 
-    // Captured when a zoom starts from 1.0, so the area under the cursor stays put. Live tracking is Task 6.
-    private (int X, int Y) _anchor;
+    /// <summary>How long the key must read as up before a missed key-up is assumed.</summary>
+    public static readonly TimeSpan StuckKeyGrace = TimeSpan.FromMilliseconds(100);
+
     private (int Width, int Height) _screen;
+    private TimeSpan? _upSince;
 
     public ZoomController(IZoomHost host, ZoomStateMachine machine)
     {
@@ -61,7 +63,12 @@ public sealed class ZoomController : IDisposable
 
     public void Press()
     {
-        lock (_gate) _machine.Press(_clock.Elapsed);
+        lock (_gate)
+        {
+            _upSince = null;
+            _machine.Press(_clock.Elapsed);
+        }
+
         _wake.Set();
     }
 
@@ -85,21 +92,34 @@ public sealed class ZoomController : IDisposable
 
         try
         {
-            var applied = 1.0;
+            var applied = (Zoom: 1.0, X: 0, Y: 0);
             while (!_stopping)
             {
                 double zoom;
                 bool active;
                 lock (_gate)
                 {
+                    PollStuckKey();
                     zoom = _machine.Advance(_clock.Elapsed);
                     active = _machine.IsActive;
                 }
 
-                if (zoom != applied)
+                if (zoom <= 1.0)
                 {
-                    Apply(zoom, startingFromIdle: applied <= 1.0);
-                    applied = zoom;
+                    if (applied.Zoom > 1.0) _host.Reset();
+                    applied = (1.0, 0, 0);
+                }
+                else
+                {
+                    // The cursor is re-read every frame, so the view follows it while zoomed.
+                    if (applied.Zoom <= 1.0) _screen = _host.GetScreenSize();
+                    var (cx, cy) = _host.GetCursorPosition();
+                    var (x, y) = AnchorCalculator.Calculate(cx, cy, _screen.Width, _screen.Height, zoom);
+                    if (zoom != applied.Zoom || x != applied.X || y != applied.Y)
+                    {
+                        _host.SetTransform((float)zoom, x, y);
+                        applied = (zoom, x, y);
+                    }
                 }
 
                 if (active) _host.WaitForNextFrame();
@@ -118,22 +138,26 @@ public sealed class ZoomController : IDisposable
         _host.Shutdown();
     }
 
-    private void Apply(double zoom, bool startingFromIdle)
+    /// <summary>
+    /// Releases the machine if the key is no longer down (a missed key-up, e.g. after a focus change or UAC prompt).
+    /// The key must read as up for <see cref="StuckKeyGrace"/> first, so the brief gap between the hook's key-down
+    /// and the async key state catching up is never mistaken for a release. Call with <c>_gate</c> held.
+    /// </summary>
+    private void PollStuckKey()
     {
-        if (zoom <= 1.0)
+        if (!_machine.IsActive || _host.IsZoomKeyDown())
         {
-            _host.Reset();
+            _upSince = null;
             return;
         }
 
-        if (startingFromIdle)
+        var now = _clock.Elapsed;
+        _upSince ??= now;
+        if (now - _upSince >= StuckKeyGrace)
         {
-            _anchor = _host.GetCursorPosition();
-            _screen = _host.GetScreenSize();
+            _upSince = null;
+            _machine.Release(now);
         }
-
-        var (x, y) = AnchorCalculator.Calculate(_anchor.X, _anchor.Y, _screen.Width, _screen.Height, zoom);
-        _host.SetTransform((float)zoom, x, y);
     }
 
     /// <summary>

@@ -41,7 +41,20 @@ public class ZoomControllerTests
 
         public void Shutdown() => Record("shutdown");
 
-        public (int X, int Y) GetCursorPosition() => (960, 540);
+        public volatile bool KeyDown = true;
+        private long _cursor = Pack(960, 540);
+
+        private static long Pack(int x, int y) => ((long)x << 32) | (uint)y;
+
+        public void MoveCursor(int x, int y) => Interlocked.Exchange(ref _cursor, Pack(x, y));
+
+        public (int X, int Y) GetCursorPosition()
+        {
+            var c = Interlocked.Read(ref _cursor);
+            return ((int)(c >> 32), (int)(uint)c);
+        }
+
+        public bool IsZoomKeyDown() => KeyDown;
 
         public (int Width, int Height) GetScreenSize() => (1920, 1080);
 
@@ -125,6 +138,57 @@ public class ZoomControllerTests
 
         Assert.Equal(1.0f, host.LastFactor);
         Assert.Equal(new[] { "reset", "shutdown" }, host.Calls.TakeLast(2));
+    }
+
+    [Fact]
+    public void WhileZoomed_ViewFollowsTheCursor()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed);
+        WaitUntil(() => host.Calls.Contains("set 2 480 270"));
+
+        host.MoveCursor(0, 0);
+        WaitUntil(() => host.Calls.Contains("set 2 0 0"));
+
+        host.MoveCursor(1920, 1080);
+        WaitUntil(() => host.Calls.Contains("set 2 960 540"));
+    }
+
+    [Fact]
+    public void MissedKeyUp_ReleasesZoomAfterGrace()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed);
+
+        host.KeyDown = false; // the key-up never reaches Release()
+        WaitUntil(() => controller.State == ZoomState.Idle);
+        WaitUntil(() => host.LastFactor == 1.0f);
+    }
+
+    [Fact]
+    public void BriefKeyUpReading_DoesNotRelease()
+    {
+        var host = new FakeHost();
+        using var controller = new ZoomController(host, FastMachine());
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => controller.State == ZoomState.Zoomed);
+
+        host.KeyDown = false;
+        Thread.Sleep(20); // well under the grace period
+        host.KeyDown = true;
+        Thread.Sleep(ZoomController.StuckKeyGrace + TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(ZoomState.Zoomed, controller.State);
     }
 
     [Fact]

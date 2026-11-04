@@ -22,6 +22,9 @@ public interface IZoomHost
 
     (int Width, int Height) GetScreenSize();
 
+    /// <summary>True while the zoom key is physically down. Polled each frame to catch a missed key-up.</summary>
+    bool IsZoomKeyDown();
+
     /// <summary>Blocks until the next display frame (vsync).</summary>
     void WaitForNextFrame();
 }
