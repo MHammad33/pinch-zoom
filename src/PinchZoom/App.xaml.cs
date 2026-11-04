@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using PinchZoom.Core;
 using PinchZoom.Native;
 
@@ -6,15 +7,15 @@ namespace PinchZoom;
 
 public partial class App : Application
 {
-    // Task 2 only: a fixed zoom to prove the Magnification API works.
-    // Task 5 moves all engine calls into ZoomController.
-    private const float TestZoomFactor = 2.0f;
+    // Task 4: zoom is instant. Task 5 moves all engine calls into ZoomController and animates them.
+    private const float HoldZoomFactor = 2.5f;
 
     private TrayHost? _tray;
     private MagnificationEngine? _engine;
-    // Without live tracking the view cannot pan, so parts of the screen (often the taskbar)
-    // stay out of reach. The test undoes itself as a safety net.
-    private readonly System.Windows.Threading.DispatcherTimer _autoRevert = new() { Interval = TimeSpan.FromSeconds(5) };
+    private HotkeyService? _hotkey;
+
+    // A quick tap of Caps Lock does nothing; zoom starts only once the key is held this long.
+    private readonly DispatcherTimer _holdTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -27,37 +28,40 @@ public partial class App : Application
         _engine = new MagnificationEngine();
         _tray = new TrayHost();
         _tray.ExitRequested += (_, _) => Shutdown();
-        _tray.TestZoomToggled += OnTestZoomToggled;
-        _autoRevert.Tick += (_, _) => { _autoRevert.Stop(); _tray.SetTestZoomChecked(false); };
 
-        if (!_engine.TryInitialize(out var error))
+        if (!_engine.TryInitialize(out var magError))
         {
-            _tray.ShowError($"Could not start magnifier (error {error}).");
+            _tray.ShowError($"Could not start magnifier (error {magError}).");
+            return;
+        }
+
+        _holdTimer.Tick += (_, _) => { _holdTimer.Stop(); ZoomIn(); };
+
+        _hotkey = new HotkeyService();
+        _hotkey.Pressed += (_, _) => _holdTimer.Start();
+        _hotkey.Released += (_, _) => { _holdTimer.Stop(); _engine.Reset(); };
+
+        if (!_hotkey.TryInstall(out var hookError))
+        {
+            _tray.ShowError($"Could not install keyboard hook (error {hookError}).");
         }
     }
 
-    private void OnTestZoomToggled(object? sender, bool on)
+    private void ZoomIn()
     {
         if (_engine is not { IsInitialized: true }) return;
-
-        _autoRevert.Stop();
-
-        if (!on)
-        {
-            _engine.Reset();
-            return;
-        }
 
         // Anchor once at the cursor so the area under it stays put. Live tracking arrives in Task 6.
         var (w, h) = MagnificationEngine.PrimaryScreenSize;
         var (cx, cy) = CursorReader.GetPosition();
-        var (xOff, yOff) = AnchorCalculator.Calculate(cx, cy, w, h, TestZoomFactor);
-        _engine.SetTransform(TestZoomFactor, xOff, yOff);
-        _autoRevert.Start();
+        var (xOff, yOff) = AnchorCalculator.Calculate(cx, cy, w, h, HoldZoomFactor);
+        _engine.SetTransform(HoldZoomFactor, xOff, yOff);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _holdTimer.Stop();
+        _hotkey?.Dispose();
         _engine?.Dispose();
         _tray?.Dispose();
         base.OnExit(e);
