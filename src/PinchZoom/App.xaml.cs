@@ -85,11 +85,12 @@ public partial class App : Application
         var hotkey = new HotkeyService(_zoomKey);
         hotkey.Pressed += (_, _) => zoom.Press();
         hotkey.Released += (_, _) => zoom.Release();
+        hotkey.Wheel += (_, delta) => zoom.Wheel(delta);
 
         if (!hotkey.TryInstall(out var hookError))
         {
-            ErrorLog.Write("Keyboard hook install failed", $"error {hookError}");
-            _tray!.ShowError($"Could not install keyboard hook (error {hookError}).");
+            ErrorLog.Write("Input hook install failed", $"error {hookError}");
+            _tray!.ShowError($"Could not install keyboard and mouse hooks (error {hookError}).");
             return;
         }
 

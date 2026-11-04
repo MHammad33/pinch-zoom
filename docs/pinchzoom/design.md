@@ -47,6 +47,14 @@ Low-level keyboard hook (key down / key up)
 
 A background thread loop paced by `DwmFlush()` (vsync) rather than `DispatcherTimer`, which is too jittery for smooth zoom. Ease-out curve, about 150 ms in and 120 ms out. Zoom factor is the animated value; the offset is computed once from the cursor position when zoom starts and stays fixed; moving the mouse never pans the view (decided in Task 6; edge-panning was rejected).
 
+### Wheel zoom (Task 8)
+
+- A `WH_MOUSE_LL` hook (installed and removed together with the keyboard hook, so Pause turns it off too) sees vertical wheel input. While the zoom key is held it forwards the delta to `ZoomController.Wheel` and swallows the event, so the window under the cursor does not also scroll. When the key is not held the wheel passes through untouched.
+- Each notch (delta 120) multiplies the level being headed for by 1.25 (wheel up = in); high-resolution wheels scale proportionally. The result is clamped to 1x to 5x and eased there over 100 ms from the factor on screen, so fast scrolling keeps retargeting without jumps.
+- A wheel during the 150 ms hold threshold starts zooming at once.
+- Wheeling down to 1x while still holding keeps the hold alive at 1x; wheeling up again re-anchors at the current cursor (the anchor is captured whenever zoom leaves 1x). While zoomed, the anchor stays fixed as before.
+- Releasing zooms out from whatever level the wheel reached, capped at the normal 120 ms. The next hold starts at the configured zoom again (the wheel level is not remembered).
+
 ### Project layout
 
 ```

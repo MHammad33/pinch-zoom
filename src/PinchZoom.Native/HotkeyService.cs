@@ -8,6 +8,8 @@ namespace PinchZoom.Native;
 /// key (Caps, Num, Scroll) the resulting toggle is undone after release with a synthetic press of the same
 /// key (marked so this hook ignores it). Other keys reach apps as normal.
 /// Raises <see cref="Pressed"/> once per hold (auto-repeat is ignored) and <see cref="Released"/> on key-up.
+/// A low-level mouse hook raises <see cref="Wheel"/> for vertical wheel input while the key is held and
+/// swallows it, so the window under the cursor does not also scroll; otherwise the wheel passes through.
 /// Install from a thread that pumps messages (the WPF UI thread); events are raised on that thread.
 /// Handlers must return quickly: Windows drops hooks that block past its timeout.
 /// </summary>
@@ -21,10 +23,12 @@ public sealed class HotkeyService : IDisposable
     private static readonly UIntPtr InjectedMarker = new(0x50494E43);
 
     // Kept in a field so the GC never collects the delegate while Windows still holds it.
-    private readonly NativeMethods.LowLevelKeyboardProc _proc;
+    private readonly NativeMethods.LowLevelHookProc _proc;
+    private readonly NativeMethods.LowLevelHookProc _mouseProc;
     private readonly int _vk;
     private readonly bool _isLockKey;
     private IntPtr _hook;
+    private IntPtr _mouseHook;
     private volatile bool _isDown;
     private bool _toggleBefore;
     private SynchronizationContext? _uiContext;
@@ -32,33 +36,59 @@ public sealed class HotkeyService : IDisposable
     public event EventHandler? Pressed;
     public event EventHandler? Released;
 
+    /// <summary>Wheel delta (120 per notch, positive = away from the user) while the key is held.</summary>
+    public event EventHandler<int>? Wheel;
+
     /// <param name="virtualKey">The zoom key's virtual-key code, as the low-level hook reports it.</param>
     public HotkeyService(int virtualKey = VK_CAPITAL)
     {
         _vk = virtualKey;
         _isLockKey = virtualKey is VK_CAPITAL or VK_NUMLOCK or VK_SCROLL;
         _proc = HookCallback;
+        _mouseProc = MouseHookCallback;
     }
 
     public bool IsInstalled => _hook != IntPtr.Zero;
 
-    /// <summary>Installs the hook. Returns false (with the Win32 error code) instead of throwing.</summary>
+    /// <summary>Installs the keyboard and mouse hooks. Returns false (with the Win32 error code) instead of throwing.</summary>
     public bool TryInstall(out int errorCode)
     {
         errorCode = 0;
         if (IsInstalled) return true;
 
         _uiContext = SynchronizationContext.Current;
-        _hook = NativeMethods.SetWindowsHookEx(
-            NativeMethods.WH_KEYBOARD_LL, _proc, NativeMethods.GetModuleHandle(null), 0);
-
+        var module = NativeMethods.GetModuleHandle(null);
+        _hook = NativeMethods.SetWindowsHookEx(NativeMethods.WH_KEYBOARD_LL, _proc, module, 0);
         if (_hook == IntPtr.Zero)
         {
             errorCode = Marshal.GetLastWin32Error();
             return false;
         }
 
+        _mouseHook = NativeMethods.SetWindowsHookEx(NativeMethods.WH_MOUSE_LL, _mouseProc, module, 0);
+        if (_mouseHook == IntPtr.Zero)
+        {
+            errorCode = Marshal.GetLastWin32Error();
+            NativeMethods.UnhookWindowsHookEx(_hook);
+            _hook = IntPtr.Zero;
+            return false;
+        }
+
         return true;
+    }
+
+    // Runs for every mouse event system-wide, so it does as little as possible.
+    private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && _isDown && (int)wParam == NativeMethods.WM_MOUSEWHEEL)
+        {
+            var info = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+            var delta = (short)(info.mouseData >> 16);
+            Wheel?.Invoke(this, delta);
+            return (IntPtr)1; // swallow: the wheel zooms instead of scrolling the window under the cursor
+        }
+
+        return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -153,12 +183,20 @@ public sealed class HotkeyService : IDisposable
         if (!IsInstalled) return;
         NativeMethods.UnhookWindowsHookEx(_hook);
         _hook = IntPtr.Zero;
+        if (_mouseHook != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        }
+
         _isDown = false;
     }
 
     private static class NativeMethods
     {
         public const int WH_KEYBOARD_LL = 13;
+        public const int WH_MOUSE_LL = 14;
+        public const int WM_MOUSEWHEEL = 0x020A;
         public const int WM_KEYDOWN = 0x0100;
         public const int WM_KEYUP = 0x0101;
         public const int WM_SYSKEYDOWN = 0x0104;
@@ -168,7 +206,18 @@ public sealed class HotkeyService : IDisposable
         public const uint KEYEVENTF_KEYUP = 0x0002;
         public const uint MAPVK_VK_TO_VSC = 0;
 
-        public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+        public delegate IntPtr LowLevelHookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MSLLHOOKSTRUCT
+        {
+            public int x;
+            public int y;
+            public uint mouseData;
+            public uint flags;
+            public uint time;
+            public UIntPtr dwExtraInfo;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct KBDLLHOOKSTRUCT
@@ -216,7 +265,7 @@ public sealed class HotkeyService : IDisposable
         }
 
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelHookProc lpfn, IntPtr hMod, uint dwThreadId);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

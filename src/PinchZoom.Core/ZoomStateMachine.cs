@@ -32,8 +32,13 @@ public sealed class ZoomStateMachine
     public static readonly TimeSpan DefaultHoldThreshold = TimeSpan.FromMilliseconds(150);
     public static readonly TimeSpan DefaultZoomInDuration = TimeSpan.FromMilliseconds(150);
     public static readonly TimeSpan DefaultZoomOutDuration = TimeSpan.FromMilliseconds(120);
+    public static readonly TimeSpan DefaultWheelDuration = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Zoom multiplier for one wheel notch (a delta of 120); smaller deltas scale it proportionally.</summary>
+    public const double WheelStepFactor = 1.25;
 
     private TimeSpan? _pressedAt;
+    private bool _held;
     private double _from = 1.0;
     private double _to = 1.0;
     private TimeSpan _segmentStart;
@@ -43,7 +48,8 @@ public sealed class ZoomStateMachine
         double targetZoom = DefaultTargetZoom,
         TimeSpan? holdThreshold = null,
         TimeSpan? zoomInDuration = null,
-        TimeSpan? zoomOutDuration = null)
+        TimeSpan? zoomOutDuration = null,
+        TimeSpan? wheelDuration = null)
     {
         if (double.IsNaN(targetZoom) || targetZoom <= 1.0 || targetZoom > MaxZoom)
             throw new ArgumentOutOfRangeException(nameof(targetZoom), targetZoom, $"Target zoom must be above 1 and at most {MaxZoom}.");
@@ -52,16 +58,23 @@ public sealed class ZoomStateMachine
         HoldThreshold = NonNegative(holdThreshold ?? DefaultHoldThreshold, nameof(holdThreshold));
         ZoomInDuration = NonNegative(zoomInDuration ?? DefaultZoomInDuration, nameof(zoomInDuration));
         ZoomOutDuration = NonNegative(zoomOutDuration ?? DefaultZoomOutDuration, nameof(zoomOutDuration));
+        WheelDuration = NonNegative(wheelDuration ?? DefaultWheelDuration, nameof(wheelDuration));
     }
 
+    /// <summary>The level a hold zooms to. The wheel can move away from it during a hold; each new hold starts here again.</summary>
     public double TargetZoom { get; }
     public TimeSpan HoldThreshold { get; }
     public TimeSpan ZoomInDuration { get; }
     public TimeSpan ZoomOutDuration { get; }
+    public TimeSpan WheelDuration { get; }
 
+    /// <summary>
+    /// Idle; ZoomingIn (animating toward the held level, from the hold or the wheel); Zoomed (at the held level,
+    /// which may be 1.0 if the wheel went all the way down); ZoomingOut (released).
+    /// </summary>
     public ZoomState State { get; private set; } = ZoomState.Idle;
 
-    /// <summary>Current zoom factor, as of the last <see cref="Advance"/> (or transition). Always within [1, TargetZoom].</summary>
+    /// <summary>Current zoom factor, as of the last <see cref="Advance"/> (or transition). Always within [1, MaxZoom].</summary>
     public double Zoom { get; private set; } = 1.0;
 
     /// <summary>The key is down but has not been held long enough to start zooming.</summary>
@@ -73,6 +86,7 @@ public sealed class ZoomStateMachine
     /// <summary>Key down. From Idle this arms the hold threshold; during zoom-out it reverses at once from the current factor.</summary>
     public void Press(TimeSpan now)
     {
+        _held = true;
         switch (State)
         {
             case ZoomState.Idle:
@@ -87,9 +101,34 @@ public sealed class ZoomStateMachine
     /// <summary>Key up. Cancels a pending hold (a tap does nothing); otherwise zooms out from the current factor.</summary>
     public void Release(TimeSpan now)
     {
+        _held = false;
         _pressedAt = null;
         if (State is ZoomState.ZoomingIn or ZoomState.Zoomed)
             StartSegment(now, ZoomState.ZoomingOut);
+    }
+
+    /// <summary>
+    /// Mouse wheel while the key is held: multiplies the level being headed for by <see cref="WheelStepFactor"/>
+    /// per notch (positive = in), clamped to [1, MaxZoom], and animates there from the current factor.
+    /// A wheel during the hold threshold starts zooming at once. Ignored when the key is not held.
+    /// </summary>
+    /// <param name="notches">Wheel delta divided by 120; fractional for high-resolution wheels.</param>
+    public void Wheel(double notches, TimeSpan now)
+    {
+        if (!_held || double.IsNaN(notches) || notches == 0) return;
+
+        _pressedAt = null;
+        var heading = State is ZoomState.ZoomingIn ? _to : Zoom;
+        var target = Math.Clamp(heading * Math.Pow(WheelStepFactor, notches), 1.0, MaxZoom);
+        if (target == heading) return;
+
+        // Bring the shown factor up to date first so the new segment starts exactly where the screen is.
+        Advance(now);
+        _from = Zoom;
+        _to = target;
+        _segmentStart = now;
+        _segmentDuration = WheelDuration;
+        State = ZoomState.ZoomingIn;
     }
 
     /// <summary>Moves the animation to <paramref name="now"/> and returns the zoom factor to show.</summary>
@@ -111,11 +150,12 @@ public sealed class ZoomStateMachine
             if (t >= 1.0)
             {
                 Zoom = _to;
-                State = _to <= 1.0 ? ZoomState.Idle : ZoomState.Zoomed;
+                // Wheeling all the way down while still holding stays Zoomed (at 1.0) so the wheel can go back up.
+                State = _to <= 1.0 && !_held ? ZoomState.Idle : ZoomState.Zoomed;
             }
             else
             {
-                Zoom = Math.Clamp(_from + (_to - _from) * Easing.EaseOutCubic(t), 1.0, TargetZoom);
+                Zoom = Math.Clamp(_from + (_to - _from) * Easing.EaseOutCubic(t), 1.0, MaxZoom);
             }
         }
 
@@ -130,8 +170,9 @@ public sealed class ZoomStateMachine
         _segmentStart = now;
 
         // A partial distance takes a proportional share of the full duration, keeping the speed consistent.
+        // Capped at the full duration, so zooming out from a wheel level above TargetZoom is not slower.
         var full = state == ZoomState.ZoomingIn ? ZoomInDuration : ZoomOutDuration;
-        var fraction = Math.Abs(_to - _from) / (TargetZoom - 1.0);
+        var fraction = Math.Min(1.0, Math.Abs(_to - _from) / (TargetZoom - 1.0));
         _segmentDuration = TimeSpan.FromTicks((long)(full.Ticks * fraction));
 
         State = state;
