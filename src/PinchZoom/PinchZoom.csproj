@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\PinchZoom.Core\PinchZoom.Core.csproj" />
+    <ProjectReference Include="..\PinchZoom.Native\PinchZoom.Native.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms only for NotifyIcon (tray icon); WPF has no tray control. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WFAC010 targets WinForms-hosted apps; this is WPF, so DPI awareness belongs in the manifest. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep WPF types (Application, etc.) unambiguous. -->
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

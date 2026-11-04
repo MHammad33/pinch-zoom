@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PinchZoom is a Windows tray utility: hold Caps Lock and the screen smoothly magnifies around the cursor, the view follows the cursor, and releasing returns to normal. No application's own zoom changes.
 
-The repo currently contains only planning docs, with no code yet:
+Task 1 (tray app shell) is done: the solution builds and the app shows a tray icon with Exit. Planning docs:
 
 - `docs/pinchzoom/design.md`: approved design. Read it before making any architectural choice.
 - `docs/pinchzoom/plan.md`: the 8 build tasks. Each task is a GitHub issue (#1 to #8) under the milestones "MVP" (Tasks 1-6) and "Polish & extras" (Tasks 7-8). Work one task per pass and close its issue from the PR.
@@ -29,7 +29,14 @@ src/PinchZoom.Native/          P/Invoke: Magnification, keyboard hook, cursor
 tests/PinchZoom.Core.Tests/    xUnit, Core only
 ```
 
-Once Task 1 lands, the standard commands apply: `dotnet build`, `dotnet test`, and a single test with `dotnet test --filter "FullyQualifiedName~<TestName>"`. Update this section with the real commands then.
+Commands (run from the repo root, where `PinchZoom.sln` lives):
+
+- Build: `dotnet build`
+- Test: `dotnet test`
+- Single test: `dotnet test --filter "FullyQualifiedName~<TestName>"`
+- Run the tray app: `dotnet run --project src/PinchZoom` (no window opens; the icon is in the tray, possibly under the hidden-icons arrow. Exit it from the tray menu.)
+
+The tray icon is a WinForms `NotifyIcon` (the app sets `UseWindowsForms` only for that, and removes the implicit `System.Windows.Forms` using so `Application` stays WPF). DPI awareness is in `src/PinchZoom/app.manifest`.
 
 ## Architecture (big picture)
 
