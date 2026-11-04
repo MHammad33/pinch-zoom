@@ -22,11 +22,7 @@ public sealed class ZoomController : IDisposable
     private bool _initialized;
     private int _initError;
 
-    /// <summary>How long the key must read as up before a missed key-up is assumed.</summary>
-    public static readonly TimeSpan StuckKeyGrace = TimeSpan.FromMilliseconds(100);
-
     private (int Width, int Height) _screen;
-    private TimeSpan? _upSince;
 
     public ZoomController(IZoomHost host, ZoomStateMachine machine)
     {
@@ -63,12 +59,7 @@ public sealed class ZoomController : IDisposable
 
     public void Press()
     {
-        lock (_gate)
-        {
-            _upSince = null;
-            _machine.Press(_clock.Elapsed);
-        }
-
+        lock (_gate) _machine.Press(_clock.Elapsed);
         _wake.Set();
     }
 
@@ -99,7 +90,6 @@ public sealed class ZoomController : IDisposable
                 bool active;
                 lock (_gate)
                 {
-                    PollStuckKey();
                     zoom = _machine.Advance(_clock.Elapsed);
                     active = _machine.IsActive;
                 }
@@ -136,28 +126,6 @@ public sealed class ZoomController : IDisposable
 
         _host.Reset();
         _host.Shutdown();
-    }
-
-    /// <summary>
-    /// Releases the machine if the key is no longer down (a missed key-up, e.g. after a focus change or UAC prompt).
-    /// The key must read as up for <see cref="StuckKeyGrace"/> first, so the brief gap between the hook's key-down
-    /// and the async key state catching up is never mistaken for a release. Call with <c>_gate</c> held.
-    /// </summary>
-    private void PollStuckKey()
-    {
-        if (!_machine.IsActive || _host.IsZoomKeyDown())
-        {
-            _upSince = null;
-            return;
-        }
-
-        var now = _clock.Elapsed;
-        _upSince ??= now;
-        if (now - _upSince >= StuckKeyGrace)
-        {
-            _upSince = null;
-            _machine.Release(now);
-        }
     }
 
     /// <summary>
