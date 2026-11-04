@@ -36,6 +36,12 @@ public sealed class ZoomController : IDisposable
     /// </summary>
     public event Action? StuckKeyReleased;
 
+    /// <summary>
+    /// Raised on the render thread when a frame threw. The screen has been reset and the render thread has
+    /// stopped, so the controller no longer zooms; create a new one to recover. Handlers must not throw.
+    /// </summary>
+    public event Action<Exception>? Faulted;
+
     public ZoomController(IZoomHost host, ZoomStateMachine machine)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
@@ -125,12 +131,21 @@ public sealed class ZoomController : IDisposable
                 else _wake.WaitOne();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // An unhandled exception may skip finally blocks, so reset here before it propagates.
-            _host.Reset();
-            _host.Shutdown();
-            throw;
+            // Never leave the screen magnified: reset, stop this thread, and let the app report it.
+            try
+            {
+                _host.Reset();
+                _host.Shutdown();
+            }
+            catch
+            {
+                // The process ending also resets the transform; nothing more to do here.
+            }
+
+            Faulted?.Invoke(ex);
+            return;
         }
 
         _host.Reset();

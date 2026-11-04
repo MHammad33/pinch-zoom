@@ -9,12 +9,26 @@ namespace PinchZoom;
 internal sealed class TrayHost : IDisposable
 {
     private readonly NotifyIcon _icon;
+    private readonly ToolStripMenuItem _pause;
 
     public event EventHandler? ExitRequested;
+    public event EventHandler? OpenConfigRequested;
+    public event EventHandler? ReloadConfigRequested;
+
+    /// <summary>Raised with the new state when the user ticks or unticks Pause zoom.</summary>
+    public event EventHandler<bool>? PauseChanged;
 
     public TrayHost()
     {
+        _pause = new ToolStripMenuItem("Pause zoom") { CheckOnClick = true };
+        _pause.CheckedChanged += (_, _) => PauseChanged?.Invoke(this, _pause.Checked);
+
         var menu = new ContextMenuStrip();
+        menu.Items.Add(_pause);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Open config", null, (_, _) => OpenConfigRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("Reload config", null, (_, _) => ReloadConfigRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
 
         _icon = new NotifyIcon
@@ -27,7 +41,10 @@ internal sealed class TrayHost : IDisposable
     }
 
     public void ShowError(string message) =>
-        _icon.ShowBalloonTip(3000, "PinchZoom", message, ToolTipIcon.Error);
+        _icon.ShowBalloonTip(5000, "PinchZoom", message, ToolTipIcon.Error);
+
+    public void ShowInfo(string message) =>
+        _icon.ShowBalloonTip(3000, "PinchZoom", message, ToolTipIcon.Info);
 
     public void Dispose()
     {

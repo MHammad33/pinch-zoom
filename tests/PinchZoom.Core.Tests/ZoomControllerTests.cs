@@ -27,8 +27,11 @@ public class ZoomControllerTests
             return InitSucceeds;
         }
 
+        public volatile bool ThrowOnSet;
+
         public void SetTransform(float factor, int xOffset, int yOffset)
         {
+            if (ThrowOnSet) throw new InvalidOperationException("boom");
             Record(string.Create(CultureInfo.InvariantCulture, $"set {factor:0.###} {xOffset} {yOffset}"));
             LastFactor = factor;
         }
@@ -195,5 +198,21 @@ public class ZoomControllerTests
 
         Assert.DoesNotContain(host.Calls, c => c.StartsWith("set"));
         Assert.Equal(ZoomState.Idle, controller.State);
+    }
+
+    [Fact]
+    public void FrameThatThrows_ResetsScreenAndRaisesFaulted()
+    {
+        var host = new FakeHost { ThrowOnSet = true };
+        using var controller = new ZoomController(host, FastMachine());
+        Exception? faulted = null;
+        controller.Faulted += ex => faulted = ex;
+        Assert.True(controller.TryStart(out _));
+
+        controller.Press();
+        WaitUntil(() => faulted is not null);
+
+        Assert.IsType<InvalidOperationException>(faulted);
+        Assert.Equal(["reset", "shutdown"], host.Calls.Skip(1).ToArray());
     }
 }

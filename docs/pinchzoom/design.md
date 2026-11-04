@@ -39,7 +39,8 @@ Low-level keyboard hook (key down / key up)
   `xOff = clamp(cx * (1 - 1/z), 0, W - W/z)`, same for y.
   This keeps the pixel under the cursor fixed on screen and pans as the cursor moves.
 - **MagnificationEngine**: wraps `MagInitialize`, `MagSetFullscreenTransform(factor, xOff, yOff)`, `MagUninitialize`. Guarantees a reset to `1.0, 0, 0` on exit.
-- **TrayHost** (WPF `Application` with no main window, plus `NotifyIcon`): tray icon, Exit menu item, later a simple settings entry.
+- **TrayHost** (WPF `Application` with no main window, plus `NotifyIcon`): tray icon and menu: Pause zoom (checkbox), Open config, Reload config, Exit. Error balloons.
+- **Config** (Task 7): `%AppData%\PinchZoom\config.json`, written with defaults on first run: `{ "key": "CapsLock", "zoom": 2.5 }`. `key` is a key name (`CapsLock`, `Scroll`, `RControlKey`, `F13`, ...); `zoom` is above 1.0 and at most 5.0. An invalid file shows a tray balloon naming the problem and the app runs on defaults. Changes apply on Reload config (or restart), which rebuilds the controller and hook; there is no file watcher.
 
 ### Animation
 
@@ -69,6 +70,9 @@ Core has no Windows dependency so the math and state machine can be tested witho
 | Zoom amount | Chrome-like range: 1x to 5x max. MVP zooms to a default of 2.5x on hold; mouse wheel while held adjusts level (Phase 8) | Fixed single level only | Chrome pinch is continuous and caps near 5x. Wheel gives similar control without a touchpad. |
 | Animation timing | `DwmFlush` loop on a background thread | `DispatcherTimer`, WPF animations | Better frame pacing; WPF animation does not drive the Magnification API anyway. |
 | Settings storage | JSON file in `%AppData%\PinchZoom` | Registry, settings UI | Simplest; V1 has no settings UI. |
+| Config reload | Tray "Reload config" item | File watcher | Watchers need debouncing (editors write in several steps); an explicit reload is simpler. |
+| Configurable key | Any single key name; the toggle undo applies only to lock keys (Caps, Num, Scroll) | A fixed allow-list | The key always passes through, so a typing key would type; that is left to the user. |
+| Restore Caps Lock | Tray "Pause zoom" checkbox removes the hook until unticked | Separate "restore" action | With pass-through the key already works; pausing turns off the zoom and the toggle undo. |
 | Tests | xUnit for Core only | UI/integration automation | Hooks and screen magnification cannot be asserted reliably; verify those manually. |
 
 ## Requirements
@@ -93,7 +97,9 @@ Core has no Windows dependency so the math and state machine can be tested witho
 
 - `MagInitialize` fails: show a tray balloon "Could not start magnifier", app stays idle, no crash.
 - Hook install fails: same, with the error code logged.
-- Unhandled exception: global handler resets magnification before the process dies. The OS also resets the transform when the initializing process ends.
+- Unhandled exception: global handler resets magnification before the process dies and logs to `%AppData%\PinchZoom\error.log`. The OS also resets the transform when the initializing process ends, which is the only protection against a Task Manager kill (verify manually; if it does not hold, a watchdog process is a separate design change).
+- Render thread fails: it resets the screen, stops, and the app shows a tray balloon and logs the error; Reload config restarts it.
+- Invalid config: tray balloon naming the problem; defaults are used.
 - Stuck state (key-up missed, e.g. focus change or UAC prompt): ZoomController also polls `GetAsyncKeyState` for the key each frame and releases if it has read as up for 100 ms. This works only because the hook passes Caps Lock through: a swallowed key reads as up in both `GetAsyncKeyState` and Raw Input (verified).
 
 ## Test strategy

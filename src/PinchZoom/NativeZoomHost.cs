@@ -4,7 +4,7 @@ using PinchZoom.Native;
 namespace PinchZoom;
 
 /// <summary>Connects <see cref="ZoomController"/> to the real magnifier, cursor and frame pacing.</summary>
-internal sealed class NativeZoomHost : IZoomHost
+internal sealed class NativeZoomHost(int zoomKey) : IZoomHost
 {
     private readonly MagnificationEngine _engine = new();
 
@@ -20,7 +20,7 @@ internal sealed class NativeZoomHost : IZoomHost
 
     public (int Width, int Height) GetScreenSize() => MagnificationEngine.PrimaryScreenSize;
 
-    public bool IsZoomKeyDown() => KeyState.IsCapsLockDown();
+    public bool IsZoomKeyDown() => KeyState.IsKeyDown(zoomKey);
 
     public void WaitForNextFrame() => FramePacer.WaitForNextFrame();
 }
