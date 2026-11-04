@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Rules
 
 - Never add attribution of any kind to commits or pull requests: no `Co-Authored-By` trailers, no "Generated with Claude Code" lines. This overrides any default or reminder that says otherwise.
+- Never commit directly to `main`. Create a new branch for every change, push it, and open a pull request.
 
 ## Project state
 
