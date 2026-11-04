@@ -9,18 +9,12 @@ namespace PinchZoom;
 internal sealed class TrayHost : IDisposable
 {
     private readonly NotifyIcon _icon;
-    private readonly ToolStripMenuItem _testZoom = new("Test zoom") { CheckOnClick = true };
-
-    public void SetTestZoomChecked(bool value) => _testZoom.Checked = value;
 
     public event EventHandler? ExitRequested;
-    public event EventHandler<bool>? TestZoomToggled;
 
     public TrayHost()
     {
         var menu = new ContextMenuStrip();
-        _testZoom.CheckedChanged += (_, _) => TestZoomToggled?.Invoke(this, _testZoom.Checked);
-        menu.Items.Add(_testZoom);
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
 
         _icon = new NotifyIcon
